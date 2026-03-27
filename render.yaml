@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: reelmind-server
+    env: node
+    region: oregon
+    plan: starter
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: NODE_ENV
+        value: production
+    disk:
+      name: reelmind-storage
+      mountPath: /opt/render/project/src
+      sizeGB: 10
