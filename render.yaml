@@ -1,18 +1,19 @@
 services:
   - type: web
-    name: reelmind-server
+    name: reelmind
     env: node
     region: oregon
     plan: starter
-    rootDir: server
-    buildCommand: npm install
-    startCommand: npm start
+    buildCommand: "npm install && npm run build && cd server && npm install"
+    startCommand: "npm start"
     envVars:
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: NODE_ENV
         value: production
+      - key: PORT
+        value: 10000
     disk:
-      name: reelmind-storage
-      mountPath: /opt/render/project/src
+      name: reelmind-data
+      mountPath: /data
       sizeGB: 10
