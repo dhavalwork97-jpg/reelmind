@@ -13,18 +13,16 @@ const PORT = process.env.PORT || 4000;
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // ─── Data paths ─────────────────────────────────────────────────────────────
-// On Render with persistent disk mounted at /data; locally use ./data
-const DATA_ROOT =
-  process.env.NODE_ENV === "production"
-    ? "/data"
-    : path.join(__dirname, "data");
+// Always use the project directory - it is ALWAYS writable on Render.
+// /opt/render/project/src/server/data
+// If you add a Render Disk, set mount path to /opt/render/project/src/server/data
+// so uploads persist across deploys — no code change needed.
+const DATA_ROOT = path.join(__dirname, "data");
 
 ["uploads", "outputs", "music", "thumbnails"].forEach((d) => {
-  const p = path.join(DATA_ROOT, d);
-  if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
+  fs.mkdirSync(path.join(DATA_ROOT, d), { recursive: true });
 });
 
-// React build path (built by `npm run build` in root)
 const CLIENT_BUILD = path.join(__dirname, "..", "client", "build");
 
 // ─── Middleware ──────────────────────────────────────────────────────────────
@@ -425,5 +423,20 @@ if (process.env.NODE_ENV === "production") {
 }
 
 app.listen(PORT, () => {
-  console.log(`🎬 ReelMind v2 on port ${PORT} | env=${process.env.NODE_ENV} | music=${getMusicLibrary().length} tracks`);
+  console.log(`🎬 ReelMind v2 on port ${PORT}`);
+  console.log(`   NODE_ENV  : ${process.env.NODE_ENV}`);
+  console.log(`   DATA_ROOT : ${DATA_ROOT}`);
+  console.log(`   Music     : ${getMusicLibrary().length} tracks`);
+  console.log(`   React app : ${fs.existsSync(CLIENT_BUILD) ? "✅ built" : "⚠️  not built (run npm run build)"}`);
+
+  // Quick write-test so any permission issue shows immediately at startup
+  try {
+    const testFile = path.join(DATA_ROOT, "uploads", ".writetest");
+    fs.writeFileSync(testFile, "ok");
+    fs.unlinkSync(testFile);
+    console.log(`   Disk write: ✅ OK`);
+  } catch (e) {
+    console.error(`   Disk write: ❌ FAILED — ${e.message}`);
+    console.error(`   → Set DATA_ROOT env var to a writable directory in Render dashboard`);
+  }
 });
