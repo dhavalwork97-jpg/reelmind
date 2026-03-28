@@ -95,7 +95,7 @@ git push -u origin main
 
 5. **Add Disk** (required for file storage):
    - Name: `reelmind-data`
-   - Mount Path: `/data`
+   - Mount Path: `/opt/render/project/src/server/data`
    - Size: 10 GB
    - Plan: Starter ($7/mo) or higher
 
@@ -104,10 +104,10 @@ git push -u origin main
 ### Step 3 — Upload Music via Render Shell
 After deploy, go to your service → **Shell** tab:
 ```bash
-mkdir -p /data/music
+mkdir -p /opt/render/project/src/server/data/music
 # Then drag-and-drop your renamed MP3s using the Render file browser
 # OR use the shell to wget from a public URL:
-# wget -O /data/music/upbeat_summer-vibes_128.mp3 "https://your-url/file.mp3"
+# wget -O /opt/render/project/src/server/data/music/upbeat_summer-vibes_128.mp3 "https://your-url/file.mp3"
 ```
 
 Your app will be live at `https://reelmind.onrender.com` (or your custom domain).
