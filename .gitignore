@@ -1,4 +1,9 @@
 node_modules/
+server/node_modules/
+client/node_modules/
 .env
-.env.local
+server/data/
+client/build/
 *.log
+.DS_Store
+Thumbs.db

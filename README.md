@@ -1,188 +1,178 @@
-# 🎬 ReelMind AI — Instagram Reel Editor
+# 🎬 ReelMind AI v2
 
-AI-powered Instagram Reels editor. Upload a video → get AI template suggestions + music recommendations → FFmpeg processes it → download your reel.
+AI-powered Instagram Reel editor — upload a video, get AI template + music suggestions, FFmpeg processes it, download your reel.
 
----
-
-## 🏗️ Project Structure
-
-```
-reelmind/
-├── server/          ← Express + FFmpeg backend
-│   ├── index.js     ← Main server
-│   ├── music/       ← 🎵 PUT YOUR MP3s HERE
-│   ├── uploads/     ← Temp video uploads (auto-created)
-│   ├── outputs/     ← Processed reels (auto-created)
-│   └── thumbnails/  ← Video thumbnails (auto-created)
-├── client/          ← React frontend
-├── render.yaml      ← Render.com deployment config
-└── package.json
-```
+**Single deployment on Render** — no separate frontend hosting needed. The Express server builds and serves the React app.
 
 ---
 
-## 🎵 Step 1 — Add Music (Do This First!)
-
-Music must be added **manually** to `server/music/`. Use free, Instagram-safe tracks.
-
-### Where to get music:
-- **[pixabay.com/music](https://pixabay.com/music)** — Best option. 100% free, no copyright claims.
-- **[mixkit.co/free-music](https://mixkit.co/free-music/)** — Also free & safe.
-
-### How to name your files:
-```
-mood_title_bpm.mp3
-```
-
-Examples:
-```
-upbeat_summer-vibes_128.mp3
-chill_golden-hour_90.mp3
-dramatic_epic-moment_140.mp3
-romantic_soft-petals_75.mp3
-energetic_neon-rush_145.mp3
-mysterious_dark-forest_85.mp3
-```
-
-**Moods to cover:** `upbeat` · `chill` · `dramatic` · `romantic` · `energetic` · `mysterious`
-
-Aim for **10–20 tracks** across all moods for best AI recommendations.
+## ✨ Features
+- 🤖 Claude AI analyses mood, energy & scene
+- 🎨 6 templates: Cinematic, Aesthetic, Trending, Minimal, Vlog, Luxury
+- 💬 Text overlay (top / centre / bottom)
+- 🥁 Beat-sync option (aligns cuts to music BPM)
+- 📤 Export for Instagram Reels, TikTok, YouTube Shorts
+- 🎵 Music library with AI ranking + in-browser preview
+- 📝 AI caption + hashtag generator
 
 ---
 
-## 💻 Step 2 — Local Development
+## 🎵 Add Music First (manual, one-time)
+
+1. Go to **[pixabay.com/music](https://pixabay.com/music)** — 100% free, no copyright claims
+2. Download 10–15 tracks across moods
+3. Rename each file: `mood_title_bpm.mp3`
+   ```
+   upbeat_summer-vibes_128.mp3
+   chill_golden-hour_90.mp3
+   dramatic_epic-moment_140.mp3
+   romantic_soft-petals_75.mp3
+   energetic_neon-rush_145.mp3
+   mysterious_dark-forest_85.mp3
+   ```
+4. **Locally:** put in `server/data/music/`
+5. **On Render:** use the Render Shell (see deploy steps)
+
+---
+
+## 💻 Local Development
 
 ### Prerequisites
 - Node.js 18+
-- FFmpeg installed: `brew install ffmpeg` (Mac) or `sudo apt install ffmpeg` (Linux)
+- FFmpeg: `brew install ffmpeg` (Mac) or `sudo apt install ffmpeg` (Ubuntu)
 
 ### Setup
 ```bash
-# Clone the repo
 git clone https://github.com/YOUR_USERNAME/reelmind.git
 cd reelmind
 
-# Install root dependencies
-npm install
+# Install everything
+npm run install-all
 
-# Install server dependencies
-cd server && npm install && cd ..
-
-# Install client dependencies
-cd client && npm install && cd ..
-
-# Setup environment
+# Configure
 cp server/.env.example server/.env
-# Edit server/.env and add your ANTHROPIC_API_KEY
+# Edit server/.env → paste your ANTHROPIC_API_KEY
 
-# Add music to server/music/ (see Step 1)
+# Add music to server/data/music/ (see above)
 
-# Start both server + client
+# Run dev mode (both server + client)
 npm run dev
+# → Frontend: http://localhost:3000
+# → API:      http://localhost:4000
 ```
-
-App runs at:
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:4000
 
 ---
 
-## 🌐 Step 3 — Deploy to GitHub + Render
+## ☁️ Deploy to GitHub + Render (single service)
 
-### Push to GitHub
+### Step 1 — Push to GitHub
 ```bash
 git init
 git add .
-git commit -m "Initial ReelMind commit"
+git commit -m "ReelMind v2"
 git branch -M main
 git remote add origin https://github.com/YOUR_USERNAME/reelmind.git
 git push -u origin main
 ```
 
-### Deploy Backend to Render
-1. Go to [render.com](https://render.com) → New → Web Service
+### Step 2 — Create Render Web Service
+1. Go to [render.com](https://render.com) → **New → Web Service**
 2. Connect your GitHub repo
 3. Settings:
-   - **Root Directory:** `server`
-   - **Build Command:** `npm install`
-   - **Start Command:** `npm start`
-   - **Plan:** Starter ($7/mo) — needed for persistent disk
-4. Add Environment Variables:
-   - `ANTHROPIC_API_KEY` = your key from console.anthropic.com
-   - `NODE_ENV` = `production`
-5. Add Disk:
-   - Name: `reelmind-storage`
-   - Mount Path: `/opt/render/project/src`
-   - Size: 10GB
+   | Field | Value |
+   |-------|-------|
+   | **Root Directory** | *(leave blank — uses root)* |
+   | **Build Command** | `npm install && npm run build && cd server && npm install` |
+   | **Start Command** | `npm start` |
+   | **Node Version** | `18` |
 
-⚠️ **Important:** After deploying, SSH into Render or use the shell to upload your music files:
+4. **Environment Variables** (in Render dashboard):
+   ```
+   ANTHROPIC_API_KEY = sk-ant-your-key-here
+   NODE_ENV          = production
+   PORT              = 10000
+   ```
+
+5. **Add Disk** (required for file storage):
+   - Name: `reelmind-data`
+   - Mount Path: `/data`
+   - Size: 10 GB
+   - Plan: Starter ($7/mo) or higher
+
+6. Click **Deploy** — Render will build React + start the server.
+
+### Step 3 — Upload Music via Render Shell
+After deploy, go to your service → **Shell** tab:
 ```bash
-# In Render shell
-mkdir -p server/music
-# Then upload files via Render's file upload or use the API endpoint
+mkdir -p /data/music
+# Then drag-and-drop your renamed MP3s using the Render file browser
+# OR use the shell to wget from a public URL:
+# wget -O /data/music/upbeat_summer-vibes_128.mp3 "https://your-url/file.mp3"
 ```
 
-### Deploy Frontend (Netlify recommended for React)
-1. Go to [netlify.com](https://netlify.com) → New Site → Import from Git
-2. Settings:
-   - **Base directory:** `client`
-   - **Build command:** `npm run build`
-   - **Publish directory:** `client/build`
-3. Add Environment Variable:
-   - `REACT_APP_API_URL` = your Render backend URL (e.g. `https://reelmind-server.onrender.com`)
-4. Deploy!
+Your app will be live at `https://reelmind.onrender.com` (or your custom domain).
 
 ---
 
-## 🎛️ Templates (Applied via FFmpeg)
-
-| Template | Effect |
-|----------|--------|
-| **Cinematic** | Letterbox bars + moody desaturation + slight contrast boost |
-| **Aesthetic** | Warm brightness + pastel saturation + vignette |
-| **Trending** | Punchy saturation boost + bright contrast |
-| **Minimal** | Subtle color correct only |
-| **Vlog Diary** | Natural warm grade |
-| **Luxury** | Deep blacks + high contrast + vignette |
-
----
-
-## 🔌 API Endpoints
+## 🔌 API Reference
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/health` | Server health check |
+| GET | `/api/health` | Health check + feature list |
 | GET | `/api/music` | List music library |
-| POST | `/api/upload` | Upload + AI analyze video |
-| POST | `/api/process` | Start FFmpeg processing |
-| GET | `/api/status/:name` | Poll processing status |
-| POST | `/api/suggest-music` | Get music recommendations |
+| POST | `/api/upload` | Upload video + Claude analysis |
+| POST | `/api/process` | Start FFmpeg job |
+| GET | `/api/status/:name` | Poll job status |
 
----
-
-## 🔑 Environment Variables
-
-```env
-ANTHROPIC_API_KEY=sk-ant-...   # Required — get from console.anthropic.com
-PORT=4000                       # Optional — defaults to 4000
+### POST `/api/process` body
+```json
+{
+  "fileId": "uuid",
+  "filename": "uuid.mp4",
+  "template": "cinematic|aesthetic|trending|minimal|vlog|luxury",
+  "musicFilename": "upbeat_summer_128.mp3",
+  "exportFormat": "instagram|tiktok|youtube_shorts",
+  "overlayText": "POV: You finally did it ✨",
+  "textPosition": "top|center|bottom",
+  "beatSync": true,
+  "musicBpm": 128,
+  "editInstructions": { "trimStart": 0, "trimEnd": 45 }
+}
 ```
 
 ---
 
-## 🚧 Limitations
-
-- Max video size: **500MB** (adjustable in `index.js`)
-- Max reel length: **90 seconds** (Instagram limit)
-- Music playback preview requires the audio file to be on the same server (CORS)
-- Processing time: **20–90 seconds** depending on video length and server specs
+## 🗂️ Project Structure
+```
+reelmind/
+├── package.json          ← root: build + start scripts
+├── render.yaml           ← Render deployment config
+├── server/
+│   ├── index.js          ← Express + FFmpeg + Claude API
+│   ├── package.json
+│   ├── .env.example
+│   └── data/             ← created automatically
+│       ├── music/        ← PUT YOUR MP3s HERE
+│       ├── uploads/      ← temp uploads (auto-cleaned)
+│       ├── outputs/      ← processed reels
+│       └── thumbnails/   ← video thumbnails
+└── client/
+    ├── package.json
+    └── src/
+        ├── App.js
+        ├── App.css
+        ├── index.js
+        └── pages/
+            ├── UploadPage.js
+            ├── TemplatePage.js
+            ├── MusicPage.js
+            └── ExportPage.js
+```
 
 ---
 
-## 📈 Future Enhancements
-
-- [ ] Text overlays with FFmpeg `drawtext` filter
-- [ ] Speed ramps (slow-mo + fast-mo)
-- [ ] Beat detection for auto-sync cuts
-- [ ] Multiple export formats (TikTok 9:16, YouTube Shorts)
-- [ ] Spotify API for real trending track data
-- [ ] User accounts & reel history
+## ⚠️ Limits
+- Max upload: 500 MB
+- Max reel length: 90 seconds
+- Processing time: 20–90s depending on video + server plan
+- Render free tier spins down after inactivity (use Starter plan to avoid)

@@ -8,33 +8,13 @@ import "./App.css";
 const STEPS = ["Upload", "Template", "Music", "Export"];
 
 export default function App() {
-  const [step, setStep] = useState(0);
-  const [project, setProject] = useState(null); // holds all video + analysis data
-  const [selectedTemplate, setSelectedTemplate] = useState(null);
-  const [selectedMusic, setSelectedMusic] = useState(null);
-  const [outputName, setOutputName] = useState(null);
+  const [step, setStep]               = useState(0);
+  const [project, setProject]         = useState(null);
+  const [template, setTemplate]       = useState(null);
+  const [exportFormat, setExportFormat] = useState("instagram");
+  const [music, setMusic]             = useState(null);
 
-  const goTo = (n) => setStep(n);
-
-  const handleUploadDone = (data) => {
-    setProject(data);
-    setSelectedTemplate(data.analysis.recommendedTemplate);
-    goTo(1);
-  };
-
-  const handleTemplateDone = (template) => {
-    setSelectedTemplate(template);
-    goTo(2);
-  };
-
-  const handleMusicDone = (music) => {
-    setSelectedMusic(music);
-    goTo(3);
-  };
-
-  const handleProcessDone = (name) => {
-    setOutputName(name);
-  };
+  const reset = () => { setProject(null); setStep(0); setTemplate(null); setMusic(null); setExportFormat("instagram"); };
 
   return (
     <div className="app">
@@ -44,10 +24,10 @@ export default function App() {
           {STEPS.map((s, i) => (
             <div
               key={s}
-              className={`step-pill ${i === step ? "active" : ""} ${i < step ? "done" : ""}`}
-              onClick={() => i < step && goTo(i)}
+              className={`step-pill ${i===step?"active":""} ${i<step?"done":""}`}
+              onClick={() => i < step && setStep(i)}
             >
-              <span className="step-dot">{i < step ? "✓" : i + 1}</span>
+              <span className="step-dot">{i < step ? "✓" : i+1}</span>
               <span className="step-name">{s}</span>
             </div>
           ))}
@@ -56,32 +36,32 @@ export default function App() {
       </header>
 
       <main className="app-main">
-        {step === 0 && <UploadPage onDone={handleUploadDone} />}
+        {step === 0 && (
+          <UploadPage onDone={(data) => { setProject(data); setTemplate(data.analysis.recommendedTemplate); setStep(1); }} />
+        )}
         {step === 1 && project && (
           <TemplatePage
             project={project}
-            initial={selectedTemplate}
-            onDone={handleTemplateDone}
-            onBack={() => goTo(0)}
+            initial={template}
+            onDone={({ template: t, exportFormat: f }) => { setTemplate(t); setExportFormat(f); setStep(2); }}
+            onBack={() => setStep(0)}
           />
         )}
         {step === 2 && project && (
           <MusicPage
             project={project}
-            template={selectedTemplate}
-            onDone={handleMusicDone}
-            onBack={() => goTo(1)}
+            onDone={(m) => { setMusic(m); setStep(3); }}
+            onBack={() => setStep(1)}
           />
         )}
         {step === 3 && project && (
           <ExportPage
             project={project}
-            template={selectedTemplate}
-            music={selectedMusic}
-            outputName={outputName}
-            onProcessDone={handleProcessDone}
-            onBack={() => goTo(2)}
-            onReset={() => { setProject(null); setStep(0); setOutputName(null); }}
+            template={template}
+            exportFormat={exportFormat}
+            music={music}
+            onBack={() => setStep(2)}
+            onReset={reset}
           />
         )}
       </main>

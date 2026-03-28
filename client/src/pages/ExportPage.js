@@ -1,169 +1,255 @@
 import React, { useState, useEffect, useRef } from "react";
-import axios from "axios";
 
-const API = process.env.REACT_APP_API_URL || "";
+const FORMAT_LABELS = {
+  instagram:      { icon:"📸", label:"Instagram Reels" },
+  tiktok:         { icon:"🎵", label:"TikTok"          },
+  youtube_shorts: { icon:"▶️", label:"YouTube Shorts"  },
+};
 
-export default function ExportPage({ project, template, music, outputName, onProcessDone, onBack, onReset }) {
-  const [status, setStatus] = useState("idle"); // idle | processing | done | error
-  const [currentOutput, setCurrentOutput] = useState(outputName);
-  const [outputUrl, setOutputUrl] = useState(null);
-  const [caption, setCaption] = useState("");
-  const [error, setError] = useState(null);
-  const pollRef = useRef(null);
+const TEXT_POSITIONS = [
+  { id:"top",    label:"Top"    },
+  { id:"center", label:"Centre" },
+  { id:"bottom", label:"Bottom" },
+];
 
+export default function ExportPage({ project, template, exportFormat, music, onBack, onReset }) {
   const { analysis, fileId, filename, meta } = project;
 
-  useEffect(() => {
-    setCaption(analysis.suggestedCaption || "");
-    return () => clearInterval(pollRef.current);
+  // Edit options (editable by user)
+  const [overlayText,   setOverlayText]   = useState(analysis.editInstructions?.suggestedOverlayText || "");
+  const [textPosition,  setTextPosition]  = useState(analysis.editInstructions?.suggestedTextPosition || "bottom");
+  const [beatSync,      setBeatSync]      = useState(!!analysis.editInstructions?.beatSync);
+  const [trimStart,     setTrimStart]     = useState(analysis.editInstructions?.trimStart || 0);
+  const [trimEnd,       setTrimEnd]       = useState(analysis.editInstructions?.trimEnd || meta.duration);
+  const [caption,       setCaption]       = useState(analysis.suggestedCaption || "");
+
+  const [status,        setStatus]        = useState("idle"); // idle|processing|done|error
+  const [outputUrl,     setOutputUrl]     = useState(null);
+  const [outputSize,    setOutputSize]    = useState(null);
+  const [errorMsg,      setErrorMsg]      = useState(null);
+  const [outputName,    setOutputName]    = useState(null);
+  const [copied,        setCopied]        = useState(null); // which thing was copied
+
+  const pollRef = useRef(null);
+  const timeoutRef = useRef(null);
+
+  useEffect(() => () => {
+    clearInterval(pollRef.current);
+    clearTimeout(timeoutRef.current);
   }, []);
 
   const startProcessing = async () => {
     setStatus("processing");
-    setError(null);
+    setErrorMsg(null);
+    setOutputUrl(null);
 
     try {
-      const res = await axios.post(`${API}/api/process`, {
-        fileId,
-        filename,
-        template,
+      const body = {
+        fileId, filename, template,
         musicFilename: music?.filename || null,
-        editInstructions: analysis.editInstructions || {},
+        exportFormat: exportFormat || "instagram",
+        overlayText: overlayText.trim(),
+        textPosition,
+        beatSync,
+        musicBpm: music?.bpm || 0,
+        editInstructions: { trimStart: Number(trimStart), trimEnd: Number(trimEnd) },
+      };
+
+      const res = await fetch("/api/process", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
       });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Processing failed.");
+      if (!data.outputName) throw new Error("No output name returned from server.");
 
-      const name = res.data.outputName;
-      setCurrentOutput(name);
-      onProcessDone(name);
+      const name = data.outputName;
+      setOutputName(name);
 
-      // Poll for completion
+      // Poll every 2 s, timeout after 4 min
       pollRef.current = setInterval(async () => {
         try {
-          const check = await axios.get(`${API}/api/status/${name}`);
-          if (check.data.status === "done") {
+          const check = await fetch(`/api/status/${name}`);
+          const job = await check.json();
+          if (job.status === "done") {
             clearInterval(pollRef.current);
-            setOutputUrl(`${API}${check.data.url}`);
+            clearTimeout(timeoutRef.current);
+            setOutputUrl(job.url);
+            setOutputSize(job.sizeMB);
             setStatus("done");
+          } else if (job.status === "error") {
+            clearInterval(pollRef.current);
+            clearTimeout(timeoutRef.current);
+            setErrorMsg(job.error || "FFmpeg failed.");
+            setStatus("error");
           }
-        } catch {
-          clearInterval(pollRef.current);
-          setStatus("error");
-          setError("Status check failed.");
-        }
+        } catch { /* keep polling */ }
       }, 2000);
 
-      // Timeout after 3 minutes
-      setTimeout(() => {
-        if (status !== "done") {
-          clearInterval(pollRef.current);
-          setStatus("error");
-          setError("Processing timed out. Try a shorter video.");
-        }
-      }, 180000);
-    } catch (err) {
+      timeoutRef.current = setTimeout(() => {
+        clearInterval(pollRef.current);
+        setErrorMsg("Processing timed out after 4 minutes. Try a shorter clip.");
+        setStatus("error");
+      }, 240000);
+    } catch (e) {
+      setErrorMsg(e.message);
       setStatus("error");
-      setError(err.response?.data?.error || "Processing failed. Check server logs.");
     }
+  };
+
+  const copy = (text, key) => {
+    navigator.clipboard?.writeText(text).then(() => {
+      setCopied(key);
+      setTimeout(() => setCopied(null), 2000);
+    });
   };
 
   const hashtags = analysis.suggestedHashtags || [];
   const instaTips = analysis.instaTips || [];
-  const editInstructions = analysis.editInstructions || {};
-
-  const templateLabel = {
-    cinematic: "🎬 Cinematic",
-    aesthetic: "🌸 Aesthetic",
-    trending: "🔥 Trending Now",
-    minimal: "◻️ Minimal",
-    vlog: "📱 Vlog Diary",
-    luxury: "✨ Luxury",
-  }[template] || template;
+  const fmtInfo = FORMAT_LABELS[exportFormat] || FORMAT_LABELS.instagram;
 
   return (
     <div className="fade-up">
-      <div className="page-title">Ready to render. 🚀</div>
+      <div className="page-title">Edit & export. 🚀</div>
       <div className="page-sub">
-        Template: <strong style={{ color: "var(--accent)" }}>{templateLabel}</strong>
-        {music ? <> · Music: <strong style={{ color: "var(--accent3)" }}>{music.title}</strong></> : " · No music (original audio)"}
+        {fmtInfo.icon} {fmtInfo.label} · Template: <strong style={{ color:"var(--accent)" }}>{template}</strong>
+        {music ? <> · 🎵 <strong style={{ color:"var(--accent3)" }}>{music.title}</strong></> : " · No music"}
       </div>
 
-      {/* Summary card */}
-      <div className="result-grid">
+      {/* ── Edit options ───────────────────────────────── */}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:20 }}>
+
+        {/* Text overlay */}
         <div className="result-card">
-          <div className="result-label">✂️ AI Edit Plan</div>
-          <div className="edit-step">
-            <div className="edit-dot">1</div>
-            <div className="edit-text">
-              Trim: {editInstructions.trimStart || 0}s → {editInstructions.trimEnd || meta.duration}s
-              <span>Removes silence, focuses on best moments</span>
+          <div className="result-label">💬 Text Overlay</div>
+          <textarea
+            value={overlayText}
+            onChange={(e) => setOverlayText(e.target.value)}
+            placeholder="e.g. POV: You finally did it ✨  (leave blank for none)"
+            className="caption-area"
+            style={{ minHeight:70, marginBottom:12 }}
+          />
+          <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+            {TEXT_POSITIONS.map((p) => (
+              <button key={p.id} onClick={() => setTextPosition(p.id)} style={{
+                padding:"5px 14px", borderRadius:20, cursor:"pointer", fontSize:12, fontWeight:600,
+                border:`1.5px solid ${textPosition===p.id ? "var(--accent)" : "var(--border)"}`,
+                background: textPosition===p.id ? "rgba(224,64,251,0.12)" : "var(--surface2)",
+                color: textPosition===p.id ? "var(--accent)" : "var(--muted2)", transition:"all 0.2s",
+              }}>{p.label}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* Trim + options */}
+        <div className="result-card">
+          <div className="result-label">✂️ Trim & Options</div>
+
+          <div style={{ display:"flex", gap:12, marginBottom:14 }}>
+            <div style={{ flex:1 }}>
+              <label style={{ fontSize:11, color:"var(--muted)", display:"block", marginBottom:5 }}>Start (s)</label>
+              <input
+                type="number" min={0} max={meta.duration - 1} value={trimStart}
+                onChange={(e) => setTrimStart(Math.max(0, Number(e.target.value)))}
+                style={{ width:"100%", background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:8, padding:"8px 10px", color:"var(--text)", fontSize:14 }}
+              />
+            </div>
+            <div style={{ flex:1 }}>
+              <label style={{ fontSize:11, color:"var(--muted)", display:"block", marginBottom:5 }}>End (s)</label>
+              <input
+                type="number" min={1} max={meta.duration} value={trimEnd}
+                onChange={(e) => setTrimEnd(Math.min(meta.duration, Number(e.target.value)))}
+                style={{ width:"100%", background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:8, padding:"8px 10px", color:"var(--text)", fontSize:14 }}
+              />
             </div>
           </div>
-          <div className="edit-step">
-            <div className="edit-dot">2</div>
-            <div className="edit-text">
-              Apply <strong>{templateLabel}</strong> color grade
-              <span>Brightness, saturation & contrast via FFmpeg</span>
+
+          {/* Beat sync toggle */}
+          <div
+            onClick={() => setBeatSync(!beatSync)}
+            style={{
+              display:"flex", alignItems:"center", gap:12, padding:"12px 14px",
+              background: beatSync ? "rgba(224,64,251,0.08)" : "var(--surface2)",
+              border:`1.5px solid ${beatSync ? "var(--accent)" : "var(--border)"}`,
+              borderRadius:10, cursor:"pointer", transition:"all 0.2s",
+            }}
+          >
+            <div style={{
+              width:36, height:20, borderRadius:20,
+              background: beatSync ? "var(--accent)" : "var(--border2)",
+              position:"relative", transition:"background 0.2s",
+              flexShrink:0,
+            }}>
+              <div style={{
+                width:14, height:14, borderRadius:"50%", background:"white",
+                position:"absolute", top:3,
+                left: beatSync ? 18 : 3, transition:"left 0.2s",
+              }} />
             </div>
-          </div>
-          {music && (
-            <div className="edit-step">
-              <div className="edit-dot">3</div>
-              <div className="edit-text">
-                Mix music: 80% · Original: 30%
-                <span>{music.title} · {music.bpm} BPM</span>
+            <div>
+              <div style={{ fontSize:13, fontWeight:600 }}>🥁 Beat-Sync Timing</div>
+              <div style={{ fontSize:11, color:"var(--muted2)" }}>
+                {beatSync
+                  ? `Cuts aligned to ${music?.bpm || "track"} BPM — recommended by AI`
+                  : "Enable to align cuts to the music beat"}
               </div>
             </div>
-          )}
-          <div className="edit-step">
-            <div className="edit-dot">{music ? 4 : 3}</div>
-            <div className="edit-text">
-              Export 1080×1920 · H.264 · AAC
-              <span>Instagram Reels optimized format</span>
-            </div>
           </div>
-          {editInstructions.notes && (
-            <div style={{ background: "var(--surface2)", borderRadius: 8, padding: "10px 12px", fontSize: 12, color: "var(--muted2)", marginTop: 8 }}>
-              💡 {editInstructions.notes}
-            </div>
-          )}
+        </div>
+      </div>
+
+      {/* Caption + hashtags */}
+      <div className="result-grid" style={{ marginBottom:20 }}>
+        <div className="result-card">
+          <div className="result-label">📝 Caption</div>
+          <textarea className="caption-area" value={caption} onChange={(e) => setCaption(e.target.value)} />
+          <button
+            onClick={() => copy(caption, "caption")}
+            style={{ marginTop:10, padding:"7px 16px", borderRadius:8, border:"1.5px solid var(--border)", background:"var(--surface2)", color: copied==="caption" ? "var(--green)" : "var(--muted2)", fontSize:12, cursor:"pointer" }}
+          >
+            {copied==="caption" ? "✓ Copied!" : "📋 Copy caption"}
+          </button>
         </div>
 
         <div className="result-card">
-          <div className="result-label" style={{ marginBottom: 10 }}>📝 AI Caption</div>
-          <textarea
-            className="caption-area"
-            value={caption}
-            onChange={(e) => setCaption(e.target.value)}
-          />
-          <div className="result-label" style={{ marginTop: 16, marginBottom: 8 }}>🏷️ Trending Hashtags</div>
+          <div className="result-label">🏷️ Trending Hashtags</div>
           <div className="hashtag-cloud">
             {hashtags.map((h) => (
-              <span key={h} className="hashtag" onClick={() => { navigator.clipboard?.writeText("#" + h); }}>#{h}</span>
+              <span key={h} className="hashtag" onClick={() => copy("#"+h, h)}>
+                {copied===h ? "✓" : `#${h}`}
+              </span>
             ))}
           </div>
+          <button
+            onClick={() => copy(hashtags.map(h=>"#"+h).join(" "), "all-tags")}
+            style={{ marginTop:12, padding:"7px 16px", borderRadius:8, border:"1.5px solid var(--border)", background:"var(--surface2)", color: copied==="all-tags" ? "var(--green)" : "var(--muted2)", fontSize:12, cursor:"pointer" }}
+          >
+            {copied==="all-tags" ? "✓ Copied all!" : "📋 Copy all hashtags"}
+          </button>
+
+          {instaTips.length > 0 && (
+            <>
+              <div className="result-label" style={{ marginTop:16 }}>💡 Pro Tips</div>
+              <div className="tips-list">
+                {instaTips.map((tip,i) => (
+                  <div key={i} className="tip">
+                    <span className="tip-icon">📌</span>
+                    <span style={{ fontSize:13, color:"var(--muted2)" }}>{tip}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Instagram Tips */}
-      {instaTips.length > 0 && (
-        <div className="card card-sm" style={{ marginBottom: 20 }}>
-          <div className="result-label" style={{ marginBottom: 12 }}>💡 Insta Pro Tips</div>
-          <div className="tips-list">
-            {instaTips.map((tip, i) => (
-              <div key={i} className="tip">
-                <span className="tip-icon">📌</span>
-                <span style={{ fontSize: 14, color: "var(--muted2)" }}>{tip}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Processing / Export */}
+      {/* ── Processing UI ─────────────────────────────── */}
       {status === "idle" && (
         <div className="export-box">
           <h3>🎬 Generate Your Reel</h3>
-          <p>FFmpeg will apply the template, mix music, and export your video in ~30–90 seconds.</p>
-          <button className="btn btn-primary" style={{ fontSize: 16, padding: "16px 36px" }} onClick={startProcessing}>
+          <p>FFmpeg applies your template, mixes music, adds text overlay, and exports in 20–90s.</p>
+          <button className="btn btn-primary" style={{ fontSize:16, padding:"16px 40px" }} onClick={startProcessing}>
             ✨ Start Processing
           </button>
         </div>
@@ -172,33 +258,45 @@ export default function ExportPage({ project, template, music, outputName, onPro
       {status === "processing" && (
         <div className="export-box">
           <div className="processing-state">
-            <div style={{ width: 52, height: 52, border: "4px solid rgba(224,64,251,0.2)", borderTopColor: "var(--accent)", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-            <div style={{ fontFamily: "Syne", fontSize: 18, fontWeight: 700 }}>FFmpeg is working...</div>
-            <div style={{ color: "var(--muted2)", fontSize: 14 }}>Applying {templateLabel} · This takes 20–90 seconds</div>
-            <div style={{ color: "var(--muted)", fontSize: 12 }}>Don't close this tab</div>
+            <div style={{
+              width:56, height:56,
+              border:"4px solid rgba(224,64,251,0.2)",
+              borderTopColor:"var(--accent)", borderRadius:"50%",
+              animation:"spin 0.8s linear infinite",
+            }} />
+            <div style={{ fontFamily:"Syne", fontSize:18, fontWeight:700 }}>FFmpeg is working…</div>
+            <div style={{ color:"var(--muted2)", fontSize:14 }}>
+              Applying {template} grade{overlayText ? " + text overlay" : ""}{music ? " + audio mix" : ""} · 20–90s
+            </div>
+            <div style={{ color:"var(--muted)", fontSize:12 }}>Don't close this tab</div>
           </div>
         </div>
       )}
 
       {status === "done" && outputUrl && (
         <div className="export-box">
-          <div style={{ fontSize: 48, marginBottom: 12 }}>🎉</div>
+          <div style={{ fontSize:48, marginBottom:10 }}>🎉</div>
           <h3>Your Reel is Ready!</h3>
-          <p>Download and post directly to Instagram Reels</p>
-
-          <div style={{ marginBottom: 20 }}>
-            <a className="download-link" href={outputUrl} download>
+          <p>
+            {outputSize ? `${outputSize} MB · ` : ""}
+            {fmtInfo.icon} {fmtInfo.label} format
+          </p>
+          <div style={{ marginBottom:20 }}>
+            <a
+              className="download-link"
+              href={outputUrl}
+              download={`reelmind_${template}_${exportFormat}.mp4`}
+            >
               ⬇️ Download Reel
             </a>
           </div>
-
           <div className="export-opts">
             {[
-              { icon: "📋", lbl: "Copy Caption", sub: "Tap to copy", action: () => navigator.clipboard?.writeText(caption) },
-              { icon: "🏷️", lbl: "Copy Hashtags", sub: "All at once", action: () => navigator.clipboard?.writeText(hashtags.map(h => "#" + h).join(" ")) },
-              { icon: "🔗", lbl: "Share Link", sub: "Direct video URL", action: () => navigator.clipboard?.writeText(outputUrl) },
+              { icon:"📋", lbl:"Copy Caption",   sub:"Ready to paste", fn:() => copy(caption,"cap2") },
+              { icon:"🏷️", lbl:"Copy Hashtags",  sub:"All at once",     fn:() => copy(hashtags.map(h=>"#"+h).join(" "),"ht2") },
+              { icon:"🔗", lbl:"Copy Video URL", sub:"Direct link",     fn:() => copy(window.location.origin+outputUrl,"url") },
             ].map((o) => (
-              <div key={o.lbl} className="export-opt" onClick={o.action}>
+              <div key={o.lbl} className="export-opt" onClick={o.fn}>
                 <div className="icon">{o.icon}</div>
                 <div className="lbl">{o.lbl}</div>
                 <div className="sub">{o.sub}</div>
@@ -209,11 +307,14 @@ export default function ExportPage({ project, template, music, outputName, onPro
       )}
 
       {status === "error" && (
-        <div style={{ background: "rgba(255,82,82,0.08)", border: "1px solid rgba(255,82,82,0.25)", borderRadius: 14, padding: "24px 28px", marginBottom: 20, textAlign: "center" }}>
-          <div style={{ fontSize: 32, marginBottom: 10 }}>⚠️</div>
-          <div style={{ fontFamily: "Syne", fontSize: 16, fontWeight: 700, marginBottom: 6 }}>Processing Failed</div>
-          <div style={{ color: "var(--muted2)", fontSize: 14 }}>{error}</div>
-          <button className="btn btn-secondary" style={{ marginTop: 16 }} onClick={startProcessing}>Retry</button>
+        <div style={{
+          background:"rgba(255,82,82,0.07)", border:"1px solid rgba(255,82,82,0.25)",
+          borderRadius:14, padding:"24px 28px", marginBottom:20, textAlign:"center",
+        }}>
+          <div style={{ fontSize:32, marginBottom:10 }}>⚠️</div>
+          <div style={{ fontFamily:"Syne", fontSize:16, fontWeight:700, marginBottom:6 }}>Processing Failed</div>
+          <div style={{ color:"var(--muted2)", fontSize:14, marginBottom:16 }}>{errorMsg}</div>
+          <button className="btn btn-secondary" onClick={startProcessing}>Retry</button>
         </div>
       )}
 
